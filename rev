@@ -32,10 +32,15 @@ EXTRA="You are an expert Python software engineer reviewing a Pull Request. The 
 
 Here is the diff (unified format):"
 
+TAIL_EXTRA="Here are the complete files from the feature branch for additional context.  
+⚠️ Do NOT review or comment on these full files directly.  
+Your review must be **strictly limited to the changes shown in the diff above**.  
+Use the full files only as supporting context to better understand the modifications."
+
 # --- MAIN ---
 
 if [[ $# -lt 2 ]]; then
-  echo "Usage: review <base-branch> <feature-branch> [--files|--full-diffs]"
+  echo "Usage: rev <base-branch> <feature-branch> [--files|--full-diffs]"
   exit 1
 fi
 
@@ -48,37 +53,63 @@ extract_files() {
   git diff --name-only "$BASE_BRANCH" "$FEATURE_BRANCH"
 }
 
+extract_diffs(){
+  git diff "$BASE_BRANCH" "$FEATURE_BRANCH"
+}
+
 # Function to extract full diffs per file
-extract_full_diffs() {
+extract_full_file_from_feature_branch(){
+  # given the file names, we need to extract full file from feature branch.
   files=$(extract_files)
+  # we need to extract the full content of the feature branch from commit message
+  output="$files"
   for f in $files; do
     echo "### FILE: $f ###"
-    git diff "$BASE_BRANCH" "$FEATURE_BRANCH" -- "$f"
+    git show "$FEATURE_BRANCH:$f"
     echo "### END FILE: $f ###"
     echo
   done
 }
 
-# Decide behavior
-if [[ "$FLAG" == "--files" ]]; then
-  output=$(extract_files)
-elif [[ "$FLAG" == "--full-diffs" ]]; then
-  output=$(extract_full_diffs)
-else
-  diff_output=$(git diff "$BASE_BRANCH" "$FEATURE_BRANCH")
-  output="${EXTRA}
+construct_final_prompt(){
+  # construct final prompt with the hardcoded text + diffs + tail extra + all files of feature branch as context
+  full_feature_files=$(extract_full_file_from_feature_branch)
+  diff_output=$(extract_diffs)
+  final_prompt="${EXTRA}
+
+${diff_output}
+
+${TAIL_EXTRA}
+
+${full_feature_files}"
+  echo "$final_prompt"
+}
+
+consturct_small_prompt(){
+  diff_output=$(extract_diffs)
+  final_prompt="${EXTRA}
 
 ${diff_output}"
+  echo "$final_prompt"
+}
+
+# Decide behavior
+if [[ "$FLAG" == "--files" ]]; then
+  diff_output=$(extract_files)
+elif [[ "$FLAG" == "--full" ]]; then
+  diff_output=$(construct_final_prompt)
+else
+  diff_output=$(consturct_small_prompt)
 fi
 
 # Copy to clipboard (macOS pbcopy, Linux xclip fallback)
 if command -v pbcopy &>/dev/null; then
-  echo -n "$output" | pbcopy
+  echo -n "$diff_output" | pbcopy
 elif command -v xclip &>/dev/null; then
-  echo -n "$output" | xclip -selection clipboard
+  echo -n "$diff_output" | xclip -selection clipboard
 else
   echo "⚠️ No clipboard tool found (pbcopy/xclip). Printing instead:"
-  echo "$output"
+  echo "$diff_output"
   exit 1
 fi
 
