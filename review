@@ -1,0 +1,85 @@
+#!/bin/bash
+# review - Run git diff between two branches, extract files or diffs, copy to clipboard
+
+# Hardcoded text to prepend
+EXTRA="You are an expert Python software engineer reviewing a Pull Request. The following is the diff between two branches in a Python Git repository. Your task: 
+1. Identify any **breaking changes** that could cause the application to fail at runtime. 
+2. Point out **bugs, incorrect logic, or missing edge cases**. 
+3. Highlight **security issues, performance concerns, or bad practices**. 
+4. Suggest **improvements** where necessary. 
+5. Check for **Python-specific issues** including:
+   - Import statement problems (circular imports, missing imports)
+   - Exception handling issues (bare except, incorrect exception types)
+   - Memory leaks or resource management problems (unclosed files, connections)
+   - Type hints inconsistencies or missing annotations where helpful
+   - Incorrect use of Python idioms (not using context managers, list comprehensions vs loops)
+   - Threading/async issues (GIL considerations, blocking operations)
+   - Package structure and __init__.py issues
+   - Dependency management problems (requirements.txt, version conflicts)
+6. Verify **Python security practices**:
+   - SQL injection vulnerabilities (especially with raw queries)
+   - Code injection risks (eval, exec usage)
+   - Path traversal vulnerabilities
+   - Pickle/deserialization security issues
+   - Input validation and sanitization
+7. Check **Python performance patterns**:
+   - Inefficient loops or data structures
+   - Unnecessary object creation in loops
+   - Missing use of generators where appropriate
+   - Database query optimization (N+1 problems)
+   - Caching opportunities
+8. Ignore minor style or formatting issues unless they affect readability or maintainability.
+
+Here is the diff (unified format):"
+
+# --- MAIN ---
+
+if [[ $# -lt 2 ]]; then
+  echo "Usage: review <base-branch> <feature-branch> [--files|--full-diffs]"
+  exit 1
+fi
+
+BASE_BRANCH=$1
+FEATURE_BRANCH=$2
+FLAG=$3
+
+# Function to extract changed files
+extract_files() {
+  git diff --name-only "$BASE_BRANCH" "$FEATURE_BRANCH"
+}
+
+# Function to extract full diffs per file
+extract_full_diffs() {
+  files=$(extract_files)
+  for f in $files; do
+    echo "### FILE: $f ###"
+    git diff "$BASE_BRANCH" "$FEATURE_BRANCH" -- "$f"
+    echo "### END FILE: $f ###"
+    echo
+  done
+}
+
+# Decide behavior
+if [[ "$FLAG" == "--files" ]]; then
+  output=$(extract_files)
+elif [[ "$FLAG" == "--full-diffs" ]]; then
+  output=$(extract_full_diffs)
+else
+  diff_output=$(git diff "$BASE_BRANCH" "$FEATURE_BRANCH")
+  output="${EXTRA}
+
+${diff_output}"
+fi
+
+# Copy to clipboard (macOS pbcopy, Linux xclip fallback)
+if command -v pbcopy &>/dev/null; then
+  echo -n "$output" | pbcopy
+elif command -v xclip &>/dev/null; then
+  echo -n "$output" | xclip -selection clipboard
+else
+  echo "⚠️ No clipboard tool found (pbcopy/xclip). Printing instead:"
+  echo "$output"
+  exit 1
+fi
+
+echo "✅ Copied to clipboard!"
